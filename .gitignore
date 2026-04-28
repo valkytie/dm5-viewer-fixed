@@ -1,0 +1,11 @@
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.avif
+*.bmp
+*.tif
+*.tiff
+Thumbs.db
+.DS_Store
