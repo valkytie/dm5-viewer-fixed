@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.09.1
+// @version      2026.05.09.2
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -71,10 +71,10 @@
     }
     box.style.borderColor = type === 'error' ? '#ff6b6b' : type === 'ok' ? '#58d68d' : 'rgba(255,255,255,.22)';
     box.textContent = 'DM5 Viewer Fixed: ' + text;
-    if (type === 'ok' && /^done\b/i.test(text)) {
+    if (type === 'ok') {
       setTimeout(function () {
         if (box && box.parentNode) box.parentNode.removeChild(box);
-      }, 1800);
+      }, 2400);
     }
   }
 
@@ -289,12 +289,21 @@
       state.autoNext = !state.autoNext;
       this.textContent = state.autoNext ? 'Auto next: On' : 'Auto next: Off';
       this.classList.toggle('is-on', state.autoNext);
+      if (state.autoNext) appendNextChapter(getUi(root));
     });
     if (!state.nextChapterUrl) {
       root.querySelector('.dm5vf-next').disabled = true;
       root.querySelector('.dm5vf-next').style.opacity = '.45';
     }
 
+    return {
+      root: root,
+      list: root.querySelector('.dm5vf-images'),
+      status: root.querySelector('.dm5vf-status'),
+    };
+  }
+
+  function getUi(root) {
     return {
       root: root,
       list: root.querySelector('.dm5vf-images'),
@@ -411,6 +420,7 @@
       ui.status.textContent = 'Done +' + loaded;
       setBootStatus('next chapter appended', 'ok');
       addEndGap(ui);
+      if (state.autoNext) appendNextChapter(ui);
     } catch (err) {
       setBootStatus(err.message || String(err), 'error');
       showError(ui, err);
@@ -431,22 +441,6 @@
     }
     ui.list.appendChild(end);
 
-    if (state.nextChapterUrl && 'IntersectionObserver' in window) {
-      var timer = null;
-      var observer = new IntersectionObserver(function (entries) {
-        if (!state.autoNext) return;
-        if (entries[0] && entries[0].isIntersecting) {
-          timer = setTimeout(function () {
-            observer.disconnect();
-            appendNextChapter(ui);
-          }, 1800);
-        } else if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-      }, { threshold: 0.55 });
-      observer.observe(end);
-    }
   }
 
   async function start() {
@@ -465,6 +459,7 @@
       ui.status.textContent = 'Done ' + loaded + '/' + info.count;
       setBootStatus('done ' + loaded + '/' + info.count, 'ok');
       addEndGap(ui);
+      if (state.autoNext) appendNextChapter(ui);
       document.title = info.title + ' - DM5 Viewer Fixed';
     } catch (err) {
       setBootStatus(err.message || String(err), 'error');
