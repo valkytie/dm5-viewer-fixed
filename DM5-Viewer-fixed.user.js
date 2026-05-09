@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.04.28.6
+// @version      2026.05.09.1
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -23,8 +23,10 @@
     loading: false,
     nextChapterUrl: '',
     nextChapterTitle: '',
-    autoNext: true,
+    autoNext: false,
     lightMode: false,
+    loadingNext: false,
+    loadedChapterUrls: {},
   };
 
   function sleep(ms) {
@@ -76,9 +78,10 @@
     }
   }
 
-  function pageVar(name) {
-    if (typeof window[name] !== 'undefined') return window[name];
-    var scripts = Array.prototype.map.call(document.scripts, function (script) {
+  function pageVar(name, doc) {
+    doc = doc || document;
+    if (doc === document && typeof window[name] !== 'undefined') return window[name];
+    var scripts = Array.prototype.map.call(doc.scripts, function (script) {
       return script.textContent || '';
     }).join('\n');
     var re = new RegExp('var\\s+' + name + '\\s*=\\s*(?:"([^"]*)"|\\\'([^\\\']*)\\\'|([^;]+))');
@@ -90,24 +93,26 @@
     return trimmed;
   }
 
-  function getChapterInfo() {
-    var scripts = Array.prototype.map.call(document.scripts, function (script) {
+  function getChapterInfo(doc, url) {
+    doc = doc || document;
+    var scripts = Array.prototype.map.call(doc.scripts, function (script) {
       return script.textContent || '';
     }).join('\n');
     var hasNativeReader =
-      !!$('#showimage') ||
-      !!$('#cp_img') ||
+      !!doc.querySelector('#showimage') ||
+      !!doc.querySelector('#cp_img') ||
       typeof window.chapterload2 === 'function' ||
       /chapterload2\s*\(/.test(scripts);
 
     return {
-      cid: pageVar('DM5_CID'),
-      mid: pageVar('DM5_MID'),
-      count: pageVar('DM5_IMAGE_COUNT'),
-      sign: pageVar('DM5_VIEWSIGN'),
-      signDate: pageVar('DM5_VIEWSIGN_DT'),
-      title: pageVar('DM5_CTITLE') || document.title,
+      cid: pageVar('DM5_CID', doc),
+      mid: pageVar('DM5_MID', doc),
+      count: pageVar('DM5_IMAGE_COUNT', doc),
+      sign: pageVar('DM5_VIEWSIGN', doc),
+      signDate: pageVar('DM5_VIEWSIGN_DT', doc),
+      title: pageVar('DM5_CTITLE', doc) || doc.title,
       hasNativeReader: hasNativeReader,
+      url: url || window.location.href,
     };
   }
 
@@ -121,12 +126,17 @@
     throw new Error('DM5 chapter variables were not found.');
   }
 
-  function findChapterLink(keyword) {
-    var links = Array.prototype.slice.call(document.querySelectorAll('a'));
+  function findChapterLink(keyword, doc, baseUrl) {
+    doc = doc || document;
+    baseUrl = baseUrl || window.location.href;
+    var links = Array.prototype.slice.call(doc.querySelectorAll('a'));
     for (var i = 0; i < links.length; i++) {
       var text = (links[i].textContent || '').replace(/\s+/g, '');
       if (text.indexOf(keyword) >= 0 && links[i].href && links[i].href.indexOf('/m') >= 0) {
-        return links[i];
+        return {
+          href: new URL(links[i].getAttribute('href'), baseUrl).href,
+          title: links[i].getAttribute('title') || links[i].textContent || 'Next chapter',
+        };
       }
     }
     return null;
@@ -136,7 +146,7 @@
     var next = findChapterLink(String.fromCharCode(19979, 19968, 31456));
     if (next) {
       state.nextChapterUrl = next.href;
-      state.nextChapterTitle = next.getAttribute('title') || next.textContent || 'Next chapter';
+      state.nextChapterTitle = next.title;
     }
   }
 
@@ -176,7 +186,8 @@
       _sign: String(info.sign),
     });
 
-    var res = await fetch('chapterfun.ashx?' + params.toString(), {
+    var endpoint = new URL('chapterfun.ashx', info.url || window.location.href).href;
+    var res = await fetch(endpoint + '?' + params.toString(), {
       credentials: 'include',
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
@@ -185,6 +196,20 @@
     if (!res.ok) throw new Error('DM5 image request failed: HTTP ' + res.status);
 
     return decodeChapterScript(await res.text());
+  }
+
+  async function fetchChapter(url) {
+    var res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) throw new Error('Next chapter request failed: HTTP ' + res.status);
+    var html = await res.text();
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    var info = getChapterInfo(doc, url);
+    var next = findChapterLink(String.fromCharCode(19979, 19968, 31456), doc, url);
+    if (next) {
+      info.nextChapterUrl = next.href;
+      info.nextChapterTitle = next.title;
+    }
+    return info;
   }
 
   function imagePageNumber(url, fallback) {
@@ -208,10 +233,16 @@
       '#dm5-viewer-fixed .dm5vf-status{min-width:0;text-align:center;white-space:nowrap}',
       '#dm5-viewer-fixed .dm5vf-toggle{border:1px solid rgba(255,255,255,.24);border-radius:4px;padding:4px 7px;background:#252525;color:#fff;cursor:pointer;font:inherit}',
       'body.dm5vf-light #dm5-viewer-fixed .dm5vf-toggle{border-color:rgba(0,0,0,.24);background:#fff;color:#111}',
+      '#dm5-viewer-fixed .dm5vf-toggle.is-on{border-color:#58d68d;color:#58d68d}',
       '#dm5-viewer-fixed .dm5vf-images{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:0}',
       '#dm5-viewer-fixed.dm5vf-fit-width .dm5vf-images img{width:min(100vw,1200px)}',
       '#dm5-viewer-fixed:not(.dm5vf-fit-width) .dm5vf-images img{max-width:100%}',
       '#dm5-viewer-fixed .dm5vf-images img{height:auto;display:block;background:#222}',
+      '#dm5-viewer-fixed .dm5vf-imgwrap{position:relative;display:flex;justify-content:center;width:100%}',
+      '#dm5-viewer-fixed .dm5vf-imgwrap.is-failed img{opacity:.2;min-height:220px}',
+      '#dm5-viewer-fixed .dm5vf-retry{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;align-items:center;gap:8px;padding:10px 12px;border:1px solid rgba(255,255,255,.28);border-radius:4px;background:rgba(17,17,17,.9);color:#fff;font:14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
+      '#dm5-viewer-fixed .dm5vf-imgwrap.is-failed .dm5vf-retry{display:flex}',
+      '#dm5-viewer-fixed .dm5vf-retry button{border:1px solid rgba(255,255,255,.28);border-radius:4px;background:#252525;color:#fff;padding:5px 8px;cursor:pointer;font:inherit}',
       '#dm5-viewer-fixed .dm5vf-error{max-width:760px;margin:40px auto;padding:16px;border:1px solid #8a3c3c;background:#2a1515;color:#ffd7d7;line-height:1.6}',
       '#dm5-viewer-fixed .dm5vf-end{height:52vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#aaa;font:14px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}',
       '#dm5-viewer-fixed .dm5vf-end a{color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:4px;padding:8px 12px;text-decoration:none;background:#252525}',
@@ -235,6 +266,7 @@
       '<button class="dm5vf-toggle" type="button">Toggle width</button>' +
       '<button class="dm5vf-light" type="button">Light</button>' +
       '<button class="dm5vf-next" type="button">Next chapter</button>' +
+      '<button class="dm5vf-autonext" type="button">Auto next: Off</button>' +
       '<span class="dm5vf-status">Ready 0/' + info.count + '</span>' +
       '</div>' +
       '<div class="dm5vf-images" aria-label="DM5 continuous reader"></div>';
@@ -253,6 +285,11 @@
     root.querySelector('.dm5vf-next').addEventListener('click', function () {
       goNextChapter();
     });
+    root.querySelector('.dm5vf-autonext').addEventListener('click', function () {
+      state.autoNext = !state.autoNext;
+      this.textContent = state.autoNext ? 'Auto next: On' : 'Auto next: Off';
+      this.classList.toggle('is-on', state.autoNext);
+    });
     if (!state.nextChapterUrl) {
       root.querySelector('.dm5vf-next').disabled = true;
       root.querySelector('.dm5vf-next').style.opacity = '.45';
@@ -266,14 +303,56 @@
   }
 
   function addImage(list, url, page) {
+    var wrap = document.createElement('div');
+    var retry = document.createElement('div');
+    var retryButton = document.createElement('button');
+    var retryText = document.createElement('span');
     var img = document.createElement('img');
+    var timeout = null;
+    var attempts = 0;
+
+    wrap.className = 'dm5vf-imgwrap';
+    retry.className = 'dm5vf-retry';
+    retryText.textContent = 'Image failed or timed out.';
+    retryButton.type = 'button';
+    retryButton.textContent = 'Retry';
+    retry.appendChild(retryText);
+    retry.appendChild(retryButton);
+
     img.loading = 'lazy';
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer-when-downgrade';
     img.dataset.page = String(page);
     img.alt = 'Page ' + page;
-    img.src = url;
-    list.appendChild(img);
+
+    function markFailed() {
+      if (timeout) clearTimeout(timeout);
+      wrap.classList.add('is-failed');
+    }
+
+    function markLoaded() {
+      if (timeout) clearTimeout(timeout);
+      wrap.classList.remove('is-failed');
+    }
+
+    function setImageSrc() {
+      attempts++;
+      wrap.classList.remove('is-failed');
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(function () {
+        if (!img.complete || !img.naturalWidth) markFailed();
+      }, 20000);
+      img.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'dm5vf_retry=' + attempts + '_' + Date.now();
+    }
+
+    img.addEventListener('load', markLoaded);
+    img.addEventListener('error', markFailed);
+    retryButton.addEventListener('click', setImageSrc);
+
+    wrap.appendChild(img);
+    wrap.appendChild(retry);
+    list.appendChild(wrap);
+    setImageSrc();
   }
 
   function showError(ui, err) {
@@ -290,12 +369,62 @@
     window.location.href = state.nextChapterUrl;
   }
 
+  async function loadChapter(ui, info, label) {
+    var seen = {};
+    if (label) {
+      var title = document.createElement('div');
+      title.className = 'dm5vf-end';
+      title.style.height = '18vh';
+      title.textContent = label;
+      ui.list.appendChild(title);
+    }
+
+    for (var page = 1; page <= Number(info.count); page++) {
+      ui.status.textContent = 'Loading ' + page + '/' + info.count;
+      setBootStatus('loading ' + page + '/' + info.count);
+      var urls = await fetchPageImages(page, info);
+
+      urls.forEach(function (url, index) {
+        if (seen[url]) return;
+        seen[url] = true;
+        addImage(ui.list, url, imagePageNumber(url, page + index));
+      });
+
+      await sleep(40);
+    }
+    return Object.keys(seen).length;
+  }
+
+  async function appendNextChapter(ui) {
+    if (!state.autoNext || !state.nextChapterUrl || state.loadingNext) return;
+    if (state.loadedChapterUrls[state.nextChapterUrl]) return;
+    state.loadingNext = true;
+    try {
+      var url = state.nextChapterUrl;
+      state.loadedChapterUrls[url] = true;
+      ui.status.textContent = 'Loading next chapter';
+      setBootStatus('loading next chapter');
+      var info = await fetchChapter(url);
+      var loaded = await loadChapter(ui, info, info.title || 'Next chapter');
+      state.nextChapterUrl = info.nextChapterUrl || '';
+      state.nextChapterTitle = info.nextChapterTitle || '';
+      ui.status.textContent = 'Done +' + loaded;
+      setBootStatus('next chapter appended', 'ok');
+      addEndGap(ui);
+    } catch (err) {
+      setBootStatus(err.message || String(err), 'error');
+      showError(ui, err);
+    } finally {
+      state.loadingNext = false;
+    }
+  }
+
   function addEndGap(ui) {
     var end = document.createElement('div');
     end.className = 'dm5vf-end';
     if (state.nextChapterUrl) {
       end.innerHTML =
-        '<div>End of chapter. Auto loading next chapter...</div>' +
+        '<div>End of chapter.</div>' +
         '<a href="' + state.nextChapterUrl + '">Next chapter</a>';
     } else {
       end.textContent = 'End of chapter.';
@@ -307,7 +436,10 @@
       var observer = new IntersectionObserver(function (entries) {
         if (!state.autoNext) return;
         if (entries[0] && entries[0].isIntersecting) {
-          timer = setTimeout(goNextChapter, 1800);
+          timer = setTimeout(function () {
+            observer.disconnect();
+            appendNextChapter(ui);
+          }, 1800);
         } else if (timer) {
           clearTimeout(timer);
           timer = null;
@@ -326,24 +458,12 @@
     var info = await waitForChapterInfo();
     setBootStatus('found chapter ' + info.cid + ', pages ' + info.count, 'ok');
     var ui = buildReader(info);
-    var seen = new Set();
 
     try {
-      for (var page = 1; page <= Number(info.count); page++) {
-        ui.status.textContent = 'Loading ' + page + '/' + info.count;
-        setBootStatus('loading ' + page + '/' + info.count);
-        var urls = await fetchPageImages(page, info);
-
-        urls.forEach(function (url, index) {
-          if (seen.has(url)) return;
-          seen.add(url);
-          addImage(ui.list, url, imagePageNumber(url, page + index));
-        });
-
-        await sleep(40);
-      }
-      ui.status.textContent = 'Done ' + seen.size + '/' + info.count;
-      setBootStatus('done ' + seen.size + '/' + info.count, 'ok');
+      state.loadedChapterUrls[info.url] = true;
+      var loaded = await loadChapter(ui, info);
+      ui.status.textContent = 'Done ' + loaded + '/' + info.count;
+      setBootStatus('done ' + loaded + '/' + info.count, 'ok');
       addEndGap(ui);
       document.title = info.title + ' - DM5 Viewer Fixed';
     } catch (err) {

@@ -11,7 +11,8 @@ This project is a modified and partially rewritten userscript based on [emma2334
 - Expands supported DM5 chapter pages into a continuous reader.
 - Hides page chrome that reduces reading space.
 - Keeps a small floating toolbar for width switching, light/dark mode, and next chapter navigation.
-- Adds a gap at the end of the chapter and automatically loads the next chapter when available.
+- Adds retry controls for images that fail or take too long to load.
+- Adds an optional, off-by-default auto-next mode that appends the next chapter after the current chapter without navigating away.
 - Detects DM5 anti-hotlink placeholders and reports a readable error.
 
 ## Installation
@@ -47,7 +48,8 @@ DM5 Viewer Fixed 是一個 Tampermonkey 使用者腳本，用來把支援的 DM5
 - 將支援的 DM5 章節頁展開成連續閱讀模式。
 - 隱藏會占用閱讀空間的頁面元素。
 - 保留小型浮動工具列，可切換寬度、開關燈、前往下一章。
-- 在章節最後加入留白，並在有下一章時自動載入下一章。
+- 圖片讀取失敗或逾時時，可在失敗位置點選重新讀取。
+- 新增預設關閉的自動下一章模式，開啟後會把下一章圖片接在目前章節後方，不會直接跳轉頁面。
 - 偵測 DM5 防盜連占位圖，並顯示可讀的錯誤訊息。
 
 ## 安裝方式
