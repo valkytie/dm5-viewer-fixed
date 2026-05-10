@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.09.2
+// @version      2026.05.10.1
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -408,6 +408,7 @@
     if (!state.autoNext || !state.nextChapterUrl || state.loadingNext) return;
     if (state.loadedChapterUrls[state.nextChapterUrl]) return;
     state.loadingNext = true;
+    var shouldContinue = false;
     try {
       var url = state.nextChapterUrl;
       state.loadedChapterUrls[url] = true;
@@ -420,12 +421,17 @@
       ui.status.textContent = 'Done +' + loaded;
       setBootStatus('next chapter appended', 'ok');
       addEndGap(ui);
-      if (state.autoNext) appendNextChapter(ui);
+      shouldContinue = state.autoNext && !!state.nextChapterUrl;
     } catch (err) {
       setBootStatus(err.message || String(err), 'error');
       showError(ui, err);
     } finally {
       state.loadingNext = false;
+      if (shouldContinue) {
+        setTimeout(function () {
+          appendNextChapter(ui);
+        }, 0);
+      }
     }
   }
 
