@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.10.2
+// @version      2026.05.10.3
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -329,7 +329,7 @@
     retry.appendChild(retryText);
     retry.appendChild(retryButton);
 
-    img.loading = 'lazy';
+    img.loading = 'eager';
     img.decoding = 'async';
     img.referrerPolicy = 'no-referrer-when-downgrade';
     img.dataset.page = String(page);
@@ -351,7 +351,7 @@
       if (timeout) clearTimeout(timeout);
       timeout = setTimeout(function () {
         if (!img.complete || !img.naturalWidth) markFailed();
-      }, 20000);
+      }, 60000);
       img.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'dm5vf_retry=' + attempts + '_' + Date.now();
     }
 
@@ -363,6 +363,17 @@
     wrap.appendChild(retry);
     list.appendChild(wrap);
     setImageSrc();
+    return new Promise(function (resolve) {
+      var done = false;
+      function finish() {
+        if (done) return;
+        done = true;
+        resolve();
+      }
+      img.addEventListener('load', finish);
+      img.addEventListener('error', finish);
+      setTimeout(finish, 60000);
+    });
   }
 
   function showError(ui, err) {
@@ -381,6 +392,7 @@
 
   async function loadChapter(ui, info, label) {
     var seen = {};
+    var pendingImages = [];
     var title = null;
     if (label) {
       title = document.createElement('div');
@@ -398,10 +410,21 @@
       urls.forEach(function (url, index) {
         if (seen[url]) return;
         seen[url] = true;
-        addImage(ui.list, url, imagePageNumber(url, page + index));
+        pendingImages.push({
+          page: imagePageNumber(url, page + index),
+          url: url,
+        });
       });
 
       await sleep(40);
+    }
+    pendingImages.sort(function (a, b) {
+      return a.page - b.page;
+    });
+    for (var i = 0; i < pendingImages.length; i++) {
+      ui.status.textContent = 'Rendering ' + (i + 1) + '/' + pendingImages.length;
+      await addImage(ui.list, pendingImages[i].url, pendingImages[i].page);
+      await sleep(20);
     }
     if (title) observeChapterStart(title, ui, info.url);
     return Object.keys(seen).length;
