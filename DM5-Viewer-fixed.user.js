@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.10.1
+// @version      2026.05.10.2
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -27,6 +27,7 @@
     lightMode: false,
     loadingNext: false,
     loadedChapterUrls: {},
+    observedChapterUrls: {},
   };
 
   function sleep(ms) {
@@ -380,8 +381,9 @@
 
   async function loadChapter(ui, info, label) {
     var seen = {};
+    var title = null;
     if (label) {
-      var title = document.createElement('div');
+      title = document.createElement('div');
       title.className = 'dm5vf-end';
       title.style.height = '18vh';
       title.textContent = label;
@@ -401,14 +403,25 @@
 
       await sleep(40);
     }
+    if (title) observeChapterStart(title, ui, info.url);
     return Object.keys(seen).length;
+  }
+
+  function observeChapterStart(element, ui, chapterUrl) {
+    if (!chapterUrl || state.observedChapterUrls[chapterUrl] || !('IntersectionObserver' in window)) return;
+    state.observedChapterUrls[chapterUrl] = true;
+    var observer = new IntersectionObserver(function (entries) {
+      if (!state.autoNext || !(entries[0] && entries[0].isIntersecting)) return;
+      observer.disconnect();
+      appendNextChapter(ui);
+    }, { rootMargin: '0px 0px -55% 0px', threshold: 0.01 });
+    observer.observe(element);
   }
 
   async function appendNextChapter(ui) {
     if (!state.autoNext || !state.nextChapterUrl || state.loadingNext) return;
     if (state.loadedChapterUrls[state.nextChapterUrl]) return;
     state.loadingNext = true;
-    var shouldContinue = false;
     try {
       var url = state.nextChapterUrl;
       state.loadedChapterUrls[url] = true;
@@ -421,17 +434,11 @@
       ui.status.textContent = 'Done +' + loaded;
       setBootStatus('next chapter appended', 'ok');
       addEndGap(ui);
-      shouldContinue = state.autoNext && !!state.nextChapterUrl;
     } catch (err) {
       setBootStatus(err.message || String(err), 'error');
       showError(ui, err);
     } finally {
       state.loadingNext = false;
-      if (shouldContinue) {
-        setTimeout(function () {
-          appendNextChapter(ui);
-        }, 0);
-      }
     }
   }
 
