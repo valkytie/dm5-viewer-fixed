@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.14.1
+// @version      2026.05.14.2
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -28,6 +28,7 @@
     loadingNext: false,
     loadedChapterUrls: {},
     observedChapterUrls: {},
+    recordedChapterUrls: {},
   };
 
   function sleep(ms) {
@@ -112,6 +113,7 @@
       count: pageVar('DM5_IMAGE_COUNT', doc),
       sign: pageVar('DM5_VIEWSIGN', doc),
       signDate: pageVar('DM5_VIEWSIGN_DT', doc),
+      userId: pageVar('DM5_USERID', doc) || 0,
       title: pageVar('DM5_CTITLE', doc) || doc.title,
       hasNativeReader: hasNativeReader,
       url: url || window.location.href,
@@ -392,6 +394,27 @@
     window.location.href = state.nextChapterUrl;
   }
 
+  function recordReadHistory(info, page) {
+    if (!info || !info.url || state.recordedChapterUrls[info.url]) return;
+    state.recordedChapterUrls[info.url] = true;
+
+    var endpoint = new URL(Number(info.userId) > 0 ? 'readHistory.ashx' : 'history.ashx', info.url).href;
+    var params = new URLSearchParams({
+      cid: String(info.cid),
+      mid: String(info.mid),
+      page: String(page || 1),
+      uid: String(info.userId || 0),
+      language: '1',
+    });
+
+    fetch(endpoint + '?' + params.toString(), {
+      credentials: 'include',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    }).catch(function (err) {
+      console.warn('[DM5 Viewer Fixed] failed to record read history', err);
+    });
+  }
+
   async function loadChapter(ui, info, label) {
     var seen = {};
     var title = null;
@@ -427,16 +450,18 @@
       }
       await sleep(20);
     }
-    if (title) observeChapterStart(title, ui, info.url);
+    if (title) observeChapterStart(title, ui, info);
     return Object.keys(seen).length;
   }
 
-  function observeChapterStart(element, ui, chapterUrl) {
+  function observeChapterStart(element, ui, info) {
+    var chapterUrl = info && info.url;
     if (!chapterUrl || state.observedChapterUrls[chapterUrl] || !('IntersectionObserver' in window)) return;
     state.observedChapterUrls[chapterUrl] = true;
     var observer = new IntersectionObserver(function (entries) {
       if (!state.autoNext || !(entries[0] && entries[0].isIntersecting)) return;
       observer.disconnect();
+      recordReadHistory(info, 1);
       appendNextChapter(ui);
     }, { rootMargin: '0px 0px -55% 0px', threshold: 0.01 });
     observer.observe(element);
@@ -474,7 +499,7 @@
         '<div>End of chapter.</div>' +
         '<a href="' + state.nextChapterUrl + '">Next chapter</a>';
     } else {
-      end.textContent = 'End of chapter.';
+      end.textContent = 'End of book.';
     }
     ui.list.appendChild(end);
 
@@ -492,6 +517,7 @@
 
     try {
       state.loadedChapterUrls[info.url] = true;
+      recordReadHistory(info, 1);
       var loaded = await loadChapter(ui, info);
       ui.status.textContent = 'Done ' + loaded + '/' + info.count;
       setBootStatus('done ' + loaded + '/' + info.count, 'ok');
