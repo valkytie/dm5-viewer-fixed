@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.10.3
+// @version      2026.05.14.1
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -50,6 +50,7 @@
 
   function setBootStatus(text, type) {
     type = type || 'info';
+    if (type === 'progress') return;
     var box = document.getElementById(ID + '-boot');
     if (!box) {
       box = document.createElement('div');
@@ -231,7 +232,8 @@
       '#dm5-viewer-fixed .dm5vf-toolbar{position:fixed;right:12px;bottom:12px;z-index:2147483646;display:flex;align-items:center;justify-content:center;gap:8px;min-height:0;padding:6px 8px;background:rgba(17,17,17,.74);border:1px solid rgba(255,255,255,.18);border-radius:4px;font:12px/1.35 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:.45;transition:opacity .15s ease}',
       'body.dm5vf-light #dm5-viewer-fixed .dm5vf-toolbar{background:rgba(255,255,255,.82);border-color:rgba(0,0,0,.18);color:#111}',
       '#dm5-viewer-fixed .dm5vf-toolbar:hover{opacity:1}',
-      '#dm5-viewer-fixed .dm5vf-status{min-width:0;text-align:center;white-space:nowrap}',
+      '#dm5-viewer-fixed .dm5vf-status{position:fixed;right:12px;top:30%;z-index:2147483645;min-width:0;max-width:140px;padding:8px 10px;border:1px solid rgba(255,255,255,.16);border-radius:4px;background:rgba(17,17,17,.5);color:#ddd;text-align:left;white-space:normal;font:12px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;opacity:.55;pointer-events:none}',
+      'body.dm5vf-light #dm5-viewer-fixed .dm5vf-status{background:rgba(255,255,255,.72);border-color:rgba(0,0,0,.14);color:#333}',
       '#dm5-viewer-fixed .dm5vf-toggle{border:1px solid rgba(255,255,255,.24);border-radius:4px;padding:4px 7px;background:#252525;color:#fff;cursor:pointer;font:inherit}',
       'body.dm5vf-light #dm5-viewer-fixed .dm5vf-toggle{border-color:rgba(0,0,0,.24);background:#fff;color:#111}',
       '#dm5-viewer-fixed .dm5vf-toggle.is-on{border-color:#58d68d;color:#58d68d}',
@@ -268,8 +270,8 @@
       '<button class="dm5vf-light" type="button">Light</button>' +
       '<button class="dm5vf-next" type="button">Next chapter</button>' +
       '<button class="dm5vf-autonext" type="button">Auto next: Off</button>' +
-      '<span class="dm5vf-status">Ready 0/' + info.count + '</span>' +
       '</div>' +
+      '<div class="dm5vf-status">Ready 0/' + info.count + '</div>' +
       '<div class="dm5vf-images" aria-label="DM5 continuous reader"></div>';
 
     var anchor = $('.view-paging') || $('.view-header-2') || document.body.firstElementChild;
@@ -392,7 +394,6 @@
 
   async function loadChapter(ui, info, label) {
     var seen = {};
-    var pendingImages = [];
     var title = null;
     if (label) {
       title = document.createElement('div');
@@ -404,26 +405,26 @@
 
     for (var page = 1; page <= Number(info.count); page++) {
       ui.status.textContent = 'Loading ' + page + '/' + info.count;
-      setBootStatus('loading ' + page + '/' + info.count);
+      setBootStatus('loading ' + page + '/' + info.count, 'progress');
       var urls = await fetchPageImages(page, info);
+      var pageImages = [];
 
       urls.forEach(function (url, index) {
         if (seen[url]) return;
         seen[url] = true;
-        pendingImages.push({
+        pageImages.push({
           page: imagePageNumber(url, page + index),
           url: url,
         });
       });
 
-      await sleep(40);
-    }
-    pendingImages.sort(function (a, b) {
-      return a.page - b.page;
-    });
-    for (var i = 0; i < pendingImages.length; i++) {
-      ui.status.textContent = 'Rendering ' + (i + 1) + '/' + pendingImages.length;
-      await addImage(ui.list, pendingImages[i].url, pendingImages[i].page);
+      pageImages.sort(function (a, b) {
+        return a.page - b.page;
+      });
+      for (var i = 0; i < pageImages.length; i++) {
+        ui.status.textContent = 'Loading image ' + pageImages[i].page + '/' + info.count;
+        await addImage(ui.list, pageImages[i].url, pageImages[i].page);
+      }
       await sleep(20);
     }
     if (title) observeChapterStart(title, ui, info.url);
