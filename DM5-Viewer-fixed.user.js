@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DM5 Viewer Fixed
 // @namespace    https://github.com/valkytie/dm5-viewer-fixed
-// @version      2026.05.14.2
+// @version      2026.05.14.3
 // @description  Continuous reader for current DM5 chapter pages.
 // @author       Emma (original), valkytie/Codex (modifications)
 // @license      MIT
@@ -51,7 +51,11 @@
 
   function setBootStatus(text, type) {
     type = type || 'info';
-    if (type === 'progress') return;
+    if (type !== 'error') {
+      var status = document.querySelector('#' + ID + ' .dm5vf-status');
+      if (status) status.textContent = text;
+      return;
+    }
     var box = document.getElementById(ID + '-boot');
     if (!box) {
       box = document.createElement('div');
@@ -59,20 +63,20 @@
       box.style.cssText = [
         'position:fixed',
         'right:12px',
-        'bottom:12px',
+        'top:12px',
         'z-index:2147483647',
-        'max-width:360px',
-        'padding:10px 12px',
+        'max-width:260px',
+        'padding:7px 9px',
         'border-radius:4px',
         'background:#161616',
         'color:#f2f2f2',
-        'font:13px/1.45 system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
+        'font:11px/1.35 system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',
         'box-shadow:0 6px 24px rgba(0,0,0,.35)',
         'border:1px solid rgba(255,255,255,.22)',
       ].join(';');
       (document.body || document.documentElement).appendChild(box);
     }
-    box.style.borderColor = type === 'error' ? '#ff6b6b' : type === 'ok' ? '#58d68d' : 'rgba(255,255,255,.22)';
+    box.style.borderColor = '#ff6b6b';
     box.textContent = 'DM5 Viewer Fixed: ' + text;
     if (type === 'ok') {
       setTimeout(function () {
